@@ -1,0 +1,1322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Incident Command XR – Multiplayer</title>
+    <style>
+        :root {
+            --app-bg: #0a0c10;
+            --raf-red: #c21807;
+            --icao-gold: #d4af37;
+            --accent: #63b3ed;
+            --glass-bg: rgba(15, 23, 42, 0.85);
+            --glass-border-color: rgba(255, 255, 255, 0.2);
+            --text-main: #ffffff;
+            --text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+        }
+
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            overflow: hidden; background-color: var(--app-bg);
+            font-family: 'Segoe UI', Roboto, sans-serif; color: var(--text-main);
+        }
+
+        #start-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 2000; display: flex; align-items: center; justify-content: center;
+            background: #000; transition: opacity 0.6s ease;
+        }
+
+        #bg-video {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            object-fit: cover; opacity: 0.6; z-index: -1;
+        }
+
+        #loading-overlay {
+            position: fixed; top: 20px; right: 20px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(15px) saturate(180%);
+            -webkit-backdrop-filter: blur(15px) saturate(180%);
+            padding: 15px; border-radius: 8px; border: 1px solid var(--accent);
+            display: none; z-index: 3000; min-width: 150px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        .loader-bar { height: 4px; background: #161b22; width: 100%; margin-top: 8px; border-radius: 2px; overflow: hidden; }
+        .loader-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.1s; }
+
+        .start-content { text-align: center; z-index: 2001; }
+        .start-actions { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+
+        .commence-btn {
+            background: var(--glass-bg);
+            color: white; border: 1px solid var(--glass-border-color);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 15px 45px; border-radius: 4px; letter-spacing: 4px;
+            font-weight: bold; cursor: pointer; transition: background 0.3s;
+            text-transform: uppercase; font-size: 13px;
+            text-shadow: var(--text-shadow); min-width: 260px;
+        }
+        .commence-btn:hover { background: rgba(255, 255, 255, 0.1); }
+        .commence-btn.xr { border-color: var(--accent); }
+
+        #main-app { display: flex; opacity: 0; transition: opacity 0.8s; width: 100%; height: 100%; }
+
+        #sidebar {
+            width: 320px; height: 94vh; margin: 3vh 0 0 25px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px) saturate(200%);
+            -webkit-backdrop-filter: blur(20px) saturate(200%);
+            border: 1px solid var(--glass-border-color);
+            border-radius: 16px;
+            padding: 25px; z-index: 10; box-sizing: border-box;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.7);
+            display: flex; flex-direction: column;
+            overflow-y: auto;
+            transition: opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1), transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            pointer-events: auto;
+        }
+
+        .sidebar-hidden { opacity: 0 !important; pointer-events: none !important; transform: translateX(-40px); }
+
+        #container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; }
+
+        .panel-label {
+            font-size: 10px; color: var(--accent); text-transform: uppercase;
+            font-weight: 800; letter-spacing: 1.5px; margin-bottom: 12px;
+            display: block; text-shadow: var(--text-shadow);
+        }
+
+        .asset-btn {
+            display: block; width: 100%; margin-bottom: 10px; padding: 12px;
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid var(--glass-border-color);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            color: white;
+            border-radius: 8px; cursor: pointer; transition: 0.2s; text-align: left;
+            font-size: 13px; font-weight: 600; outline: none;
+            box-sizing: border-box;
+            text-shadow: var(--text-shadow);
+        }
+
+        select.asset-btn {
+            appearance: none;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3e%3cpath d='M7 10l5 5 5-5z'/%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            background-size: 20px;
+            color-scheme: dark;
+        }
+        select.asset-btn option { background-color: #1a1d21; color: white; }
+
+        .asset-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        .asset-btn:hover:not(:disabled) { border-color: var(--accent); background: rgba(99, 179, 237, 0.2); transform: translateY(-1px); }
+
+        .active-mode { background: var(--accent) !important; color: #000 !important; font-weight: 800; border: none; text-shadow: none; }
+
+        .reset-btn { background: rgba(194, 24, 7, 0.6); }
+        .reset-btn:hover { background: rgba(194, 24, 7, 0.8); }
+
+        .save-btn { background: rgba(212, 175, 55, 0.9); color: #000; font-weight: 800; border: none; margin-top: 10px; text-shadow: none; }
+        .save-btn:hover { background: #f1c40f; }
+
+        .load-btn { background: rgba(35, 134, 54, 0.8); color: white; font-weight: 800; border: none; margin-top: 5px; }
+        .load-btn:hover { background: #2ea043; }
+
+        .xr-btn { display: none; border-color: var(--accent); }
+
+        #net-status {
+            font-size: 11px; line-height: 1.6; padding: 8px 10px; margin-bottom: 18px;
+            border-radius: 8px; background: rgba(0,0,0,0.35); border: 1px solid var(--glass-border-color);
+        }
+
+        .control-info {
+            font-size: 10px; color: #ffffff; margin-top: auto;
+            line-height: 2; text-transform: uppercase;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            padding-top: 20px; text-shadow: var(--text-shadow);
+        }
+
+        kbd {
+            background: rgba(0, 0, 0, 0.5); padding: 3px 6px;
+            border-radius: 4px; color: var(--accent);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            margin-right: 4px; font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <input type="file" id="file-loader" accept=".json" style="display: none;" onchange="handleFileSelect(event)">
+
+    <div id="loading-overlay">
+        <span class="panel-label" id="load-status">Loading Asset...</span>
+        <div id="load-percent" style="font-size: 18px; font-weight: bold; text-shadow: var(--text-shadow);">0%</div>
+        <div class="loader-bar"><div id="loader-fill" class="loader-fill"></div></div>
+    </div>
+
+    <div id="start-screen">
+        <video id="bg-video" autoplay muted playsinline loop>
+            <source src="Models/Title.mp4" type="video/mp4">
+        </video>
+        <div class="start-content">
+            <h1 style="color:white; letter-spacing:10px; font-weight:200; margin: 0; text-shadow: 0 0 20px rgba(99, 179, 237, 0.5);">INCIDENT COMMAND</h1>
+            <p style="color: var(--accent); font-size: 10px; letter-spacing: 4px; margin-bottom: 40px; font-weight: 600; text-shadow: var(--text-shadow);">2026 Entoli XR &middot; Multiplayer</p>
+            <div class="start-actions">
+                <button class="commence-btn xr" id="start-vr" style="display:none" onclick="startXR('vr')">ENTER VR</button>
+                <button class="commence-btn xr" id="start-mr" style="display:none" onclick="startXR('mr')">ENTER MIXED REALITY</button>
+                <button class="commence-btn" onclick="enterApp()">START VIEWER</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="main-app">
+        <div id="sidebar">
+            <div id="net-status">Connecting...</div>
+
+            <span class="panel-label">Scene Selection</span>
+            <select id="scene-selector" class="asset-btn" onchange="changeEnvironment(this.value)"></select>
+
+            <div style="margin-top: 20px;">
+                <span class="panel-label">Asset Selector</span>
+                <select id="asset-selector" class="asset-btn" onchange="if(this.value) { addAsset(this.value); this.value=''; }">
+                    <option value="" disabled selected>Select Asset to Spawn...</option>
+                </select>
+            </div>
+
+            <div style="margin-top: 20px;">
+                <span class="panel-label">Display Tools</span>
+                <button id="btn-move" class="asset-btn mode-btn active-mode" onclick="setMode('translate')">MOVE (W)</button>
+                <button id="btn-rotate" class="asset-btn mode-btn" onclick="setMode('rotate')">ROTATE (E)</button>
+                <button class="asset-btn save-btn" onclick="saveScene()">SAVE PLAN AS (S)</button>
+                <button class="asset-btn load-btn" onclick="document.getElementById('file-loader').click()">LOAD PLAN (L)</button>
+                <button class="asset-btn reset-btn" onclick="resetToPlan()">RESET VIEW (R)</button>
+            </div>
+
+            <div style="margin-top: 20px;">
+                <span class="panel-label">Headset</span>
+                <button id="side-vr" class="asset-btn xr-btn" onclick="startXR('vr')">ENTER VR</button>
+                <button id="side-mr" class="asset-btn xr-btn" onclick="startXR('mr')">ENTER MIXED REALITY</button>
+            </div>
+
+            <div class="control-info">
+                <kbd>M</kbd> TOGGLE MENU<br>
+                <kbd>W/E</kbd> TRANSFORM MODES<br>
+                <kbd>S</kbd> SAVE | <kbd>L</kbd> LOAD<br>
+                <kbd>L-DRAG</kbd> ORBIT | <kbd>R-DRAG</kbd> PAN<br>
+                <kbd>DEL</kbd> DELETE SELECTED<br>
+                <kbd>+</kbd> / <kbd>-</kbd> SCALE FIRE<br>
+                <span style="color:var(--icao-gold); display:block; margin-top:10px; font-weight: 700;">XR Training Labs</span>
+            </div>
+        </div>
+        <div id="container"></div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { TransformControls } from 'three/addons/controls/TransformControls.js';
+        import { Sky } from 'three/addons/objects/Sky.js';
+        import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+
+        /* =====================================================================
+           CONFIG
+        ===================================================================== */
+        const SCENES = [
+            ['Urban2.glb', 'Urban'], ['Port.glb', 'Port'], ['Desert.glb', 'Desert'],
+            ['IndA.glb', 'Industrial A'], ['RAFHAS1.glb', 'HAS Site'], ['Hangar.glb', 'Hangar Interior']
+        ];
+        // [file, sidebar label, short label for the VR panel]
+        const ASSETS = [
+            ['Firefighter.glb', 'Firefighter', 'Firefighter'], ['Striker.glb', 'ARFF Pump', 'ARFF Pump'],
+            ['MPRV.glb', 'Pump', 'Pump'], ['PC.glb', 'Police Car', 'Police Car'],
+            ['EWS.glb', 'Emergency Water Supply', 'Water Supply'], ['Cordon.glb', 'Cordon', 'Cordon'],
+            ['FastJet.glb', 'Fast Jet', 'Fast Jet'], ['C130k.glb', 'Transport Aircraft', 'Transport A/C'],
+            ['Helo.glb', 'Helicopter', 'Helicopter'], ['CH47.glb', 'Tandem Rotor Helicopter', 'Tandem Helo'],
+            ['Gas.glb', 'Gas Bottle', 'Gas Bottle'], ['pallet_explosives_1.3.glb', 'Explosives', 'Explosives'],
+            ['Fire.glb', 'Fire', 'Fire'], ['Defender.glb', 'LR Defender', 'LR Defender'],
+            ['T6.glb', 'Van', 'Van'], ['Volvo.glb', 'EV', 'EV'], ['Casualty.glb', 'Casualty', 'Casualty']
+        ];
+        // Where each player stands relative to the shared miniature (seat 0 = default side)
+        const SEAT_YAWS = [0, Math.PI, Math.PI / 2, -Math.PI / 2, Math.PI / 4, -Math.PI / 4, 3 * Math.PI / 4, -3 * Math.PI / 4];
+        const TABLE_DIST = 1.0;           // metres in front of the player (table centre)
+        const ASSET_START_SCALE = 5;      // same as the original viewer
+
+        const $ = id => document.getElementById(id);
+        const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+        // fill the desktop selectors
+        $('scene-selector').innerHTML = SCENES.map(s => `<option value="${s[0]}">${s[1]}</option>`).join('');
+        $('asset-selector').insertAdjacentHTML('beforeend', ASSETS.map(a => `<option value="${a[0]}">${a[1]}</option>`).join(''));
+
+        /* =====================================================================
+           RENDERER / SCENE
+        ===================================================================== */
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 8000);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 0.5;
+        renderer.xr.enabled = true;
+        renderer.xr.setReferenceSpaceType('local-floor');
+        $('container').appendChild(renderer.domElement);
+
+        const sky = new Sky();
+        sky.scale.setScalar(450000);
+        sky.frustumCulled = false;
+        scene.add(sky);
+
+        const sun = new THREE.Vector3();
+        const effectController = { turbidity: 10, rayleigh: 3, mieCoefficient: 0.005, mieDirectionalG: 0.7, elevation: 1100, azimuth: 180 };
+        const uniforms = sky.material.uniforms;
+        uniforms['turbidity'].value = effectController.turbidity;
+        uniforms['rayleigh'].value = effectController.rayleigh;
+        uniforms['mieCoefficient'].value = effectController.mieCoefficient;
+        uniforms['mieDirectionalG'].value = effectController.mieDirectionalG;
+        sun.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - effectController.elevation), THREE.MathUtils.degToRad(effectController.azimuth));
+        uniforms['sunPosition'].value.copy(sun);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+
+        /* Scene graph:
+           anchor  (placed in front of the player in XR; identity on desktop)
+            ├ world        (the scene content; scaled down to a table-top in XR)
+            │   ├ environment, assets, sun light, drop marker
+            └ avatarRoot   (other players, in real-world metres around the table)  */
+        const anchor = new THREE.Group(); scene.add(anchor);
+        const world = new THREE.Group(); anchor.add(world);
+        const avatarRoot = new THREE.Group(); anchor.add(avatarRoot);
+
+        const sunLight = new THREE.DirectionalLight(0xffffff, 3.5);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.set(2048, 2048);
+        world.add(sunLight, sunLight.target);
+
+        const pmremGenerator = new THREE.PMREMGenerator(renderer);
+        scene.environment = pmremGenerator.fromScene(sky).texture;
+
+        const orbit = new OrbitControls(camera, renderer.domElement);
+        orbit.enableDamping = true;
+        orbit.minDistance = 0.5;
+        orbit.maxDistance = 5000;
+
+        const transform = new TransformControls(camera, renderer.domElement);
+        scene.add(transform);
+
+        // drop marker (shows where a held asset will land)
+        const marker = new THREE.Mesh(
+            new THREE.RingGeometry(0.75, 1, 40).rotateX(-Math.PI / 2),
+            new THREE.MeshBasicMaterial({ color: 0xffd24a, transparent: true, opacity: 0.9, depthTest: false })
+        );
+        marker.renderOrder = 20; marker.visible = false; world.add(marker);
+
+        /* =====================================================================
+           STATE
+        ===================================================================== */
+        const manager = new THREE.LoadingManager();
+        const loader = new GLTFLoader(manager);
+        const uiLoadOverlay = $('loading-overlay'), uiLoadPercent = $('load-percent'),
+              uiLoadFill = $('loader-fill'), uiLoadStatus = $('load-status'), sidebar = $('sidebar');
+
+        let isLoading = false;
+        let envModel = null, envBox = new THREE.Box3(), currentEnv = null, stateEpoch = 0;
+        const objects = new Map();          // id -> Object3D
+        let draggableObjects = [];
+        let selected = null, objSerial = 1;
+
+        let isXR = false, xrMode = 'vr', needRecenter = false, xrFrames = 0;
+        let tableSize = 1.5, tableH = 0.95, anchorYaw = 0;
+        let tableScale = 1, P0 = new THREE.Vector3(), envCenter = new THREE.Vector3();
+        let savedCam = null;
+
+        let peer = null, myId = 0, mySeat = 0, netState = 'connecting', needSync = true, helloSent = false, plansAvailable = [false, false, false];
+        const roomName = (new URLSearchParams(location.search).get('room') || 'main').replace(/[^\w-]/g, '_').slice(0, 24);
+        const players = new Map();
+
+        const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
+        const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
+        const _e = new THREE.Euler(), _ey = new THREE.Euler(), _e2 = new THREE.Euler(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4();
+        const _down = new THREE.Vector3(0, -1, 0);
+        const floorRay = new THREE.Raycaster();
+
+        /* =====================================================================
+           LOADING UI
+        ===================================================================== */
+        manager.onStart = () => { isLoading = true; uiLoadOverlay.style.display = 'block'; toggleControls(false); ui.loading = true; ui.dirty = true; };
+        manager.onProgress = (url, loaded, total) => {
+            const pc = Math.round((loaded / total) * 100);
+            uiLoadPercent.innerText = `${pc}%`; uiLoadFill.style.width = `${pc}%`;
+        };
+        manager.onLoad = () => { isLoading = false; uiLoadOverlay.style.display = 'none'; toggleControls(true); ui.loading = false; ui.dirty = true; };
+
+        function toggleControls(enabled) {
+            document.querySelectorAll('.asset-btn, #scene-selector, #asset-selector').forEach(i => i.disabled = !enabled);
+        }
+        function toggleMenu() { sidebar.classList.toggle('sidebar-hidden'); }
+
+        /* =====================================================================
+           TABLE LAYOUT  (desktop = 1:1, XR = miniature at waist level)
+        ===================================================================== */
+        function computeTable() {
+            const size = envBox.getSize(new THREE.Vector3());
+            envBox.getCenter(envCenter);
+            P0.set(envCenter.x, envBox.min.y, envCenter.z);
+            const ext = Math.max(size.x, size.z, 1e-3);
+            tableScale = tableSize / ext;
+            // sun follows the map centre
+            sunLight.position.copy(envCenter).addScaledVector(sun, 200);
+            sunLight.target.position.copy(envCenter);
+        }
+
+        function applyLayout() {
+            if (!envModel) return;
+            const k = isXR ? tableScale : 1;
+            if (isXR) {
+                anchor.rotation.set(0, anchorYaw, 0);
+                anchor.position.y = tableH;
+                world.scale.setScalar(tableScale);
+                world.position.copy(P0).multiplyScalar(-tableScale);
+                avatarRoot.position.set(0, 0, 0);
+                avatarRoot.scale.setScalar(1);
+            } else {
+                anchor.position.set(0, 0, 0); anchor.rotation.set(0, 0, 0);
+                world.scale.setScalar(1); world.position.set(0, 0, 0);
+                avatarRoot.position.copy(P0);
+                avatarRoot.scale.setScalar(1 / tableScale);
+            }
+            // shadow frustum is expressed in world units, so scale it with the table
+            const size = envBox.getSize(_v1);
+            const ext = Math.max(500, Math.max(size.x, size.z) * 0.55) * k;
+            const sc = sunLight.shadow.camera;
+            sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext;
+            sc.near = 0.1 * k; sc.far = 2000 * k + ext * 2;
+            sunLight.shadow.bias = -0.0005; sunLight.shadow.normalBias = 0.02 * k;
+            sc.updateProjectionMatrix();
+            marker.scale.setScalar(0.02 / tableScale);
+            anchor.updateMatrixWorld(true);
+        }
+
+        function getFloorY(x, z) {
+            if (!envModel) return 0;
+            _v1.set(x, envBox.max.y + 50, z); world.localToWorld(_v1);
+            floorRay.set(_v1, _down);
+            const hit = floorRay.intersectObject(envModel, true);
+            if (!hit.length) return 0.01;
+            _v2.copy(hit[0].point); world.worldToLocal(_v2);
+            return _v2.y + 0.01;
+        }
+
+        function placeDesktopCamera() {
+            if (isXR) return;
+            camera.position.set(envCenter.x, 200, envCenter.z);
+            camera.lookAt(envCenter);
+            orbit.target.copy(envCenter);
+        }
+
+        /* =====================================================================
+           OBJECT MANAGEMENT
+        ===================================================================== */
+        const disposeObject = (obj) => {
+            obj.traverse((node) => {
+                if (node.isMesh) {
+                    node.geometry.dispose();
+                    if (Array.isArray(node.material)) node.material.forEach(m => m.dispose());
+                    else node.material.dispose();
+                }
+            });
+            if (obj.parent) obj.parent.remove(obj);
+        };
+
+        const newId = () => `${myId || 'L'}-${objSerial++}-${Math.random().toString(36).slice(2, 6)}`;
+
+        function worldLocalTransform(obj, p, q, s) {
+            obj.updateWorldMatrix(true, false);
+            world.updateWorldMatrix(true, false);
+            _m.copy(world.matrixWorld).invert().multiply(obj.matrixWorld).decompose(p, q, s);
+        }
+
+        function recOf(obj, live) {
+            if (live) worldLocalTransform(obj, _p, _q, _s);
+            else { const t = obj.userData.target; _p.copy(t.pos); _q.copy(t.quat); _s.copy(t.scale); }
+            _e.setFromQuaternion(_q, 'XYZ');
+            return {
+                id: obj.userData.id, file: obj.userData.filename,
+                pos: { x: _p.x, y: _p.y, z: _p.z }, rot: { x: _e.x, y: _e.y, z: _e.z }, scale: { x: _s.x, y: _s.y, z: _s.z }
+            };
+        }
+
+        function setTarget(obj, rec, snap) {
+            const t = obj.userData.target;
+            t.pos.set(rec.pos.x, rec.pos.y, rec.pos.z);
+            t.quat.setFromEuler(_e2.set(rec.rot.x, rec.rot.y, rec.rot.z));
+            t.scale.set(rec.scale.x, rec.scale.y, rec.scale.z);
+            if (snap) { obj.position.copy(t.pos); obj.quaternion.copy(t.quat); obj.scale.copy(t.scale); }
+        }
+
+        function commitTarget(obj) {              // make the target equal to the current pose
+            worldLocalTransform(obj, _p, _q, _s);
+            const t = obj.userData.target;
+            t.pos.copy(_p); t.quat.copy(_q); t.scale.copy(_s);
+        }
+
+        function spawnAsset(rec, announce) {
+            return new Promise(resolve => {
+                const epoch = stateEpoch;
+                loader.load(`./Assets/${rec.file}`, (gltf) => {
+                    if (epoch !== stateEpoch || objects.has(rec.id)) { disposeObject(gltf.scene); return resolve(null); }
+                    const model = gltf.scene;
+                    model.userData = { id: rec.id, filename: rec.file, held: null, remoteHolder: 0,
+                        target: { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), scale: new THREE.Vector3(1, 1, 1) }, lastSend: 0 };
+                    model.traverse(n => {
+                        if (n.isMesh) { n.castShadow = true; n.receiveShadow = true; if (n.material) n.material.depthWrite = true; }
+                    });
+                    setTarget(model, rec, true);
+                    world.add(model);
+                    draggableObjects.push(model);
+                    objects.set(rec.id, model);
+                    if (announce) send({ t: 'spawn', rec: recOf(model, false) });
+                    resolve(model);
+                }, undefined, (err) => { console.warn('Asset failed', rec.file, err); resolve(null); });
+            });
+        }
+
+        function spawnNew(file, x, z) {
+            const rec = { id: newId(), file, pos: { x, y: getFloorY(x, z), z }, rot: { x: 0, y: 0, z: 0 },
+                scale: { x: ASSET_START_SCALE, y: ASSET_START_SCALE, z: ASSET_START_SCALE } };
+            return spawnAsset(rec, true).then(o => { if (o) { selected = o; ui.dirty = true; } return o; });
+        }
+
+        function removeObject(id, announce) {
+            const obj = objects.get(id); if (!obj) return;
+            if (transform.object === obj) transform.detach();
+            ctrls.forEach(c => { if (c.userData.held === obj) { c.userData.held = null; } });
+            draggableObjects = draggableObjects.filter(o => o !== obj);
+            objects.delete(id);
+            if (selected === obj) selected = null;
+            disposeObject(obj);
+            if (announce) send({ t: 'del', id });
+            ui.dirty = true;
+        }
+
+        function clearAssets() {
+            transform.detach();
+            ctrls.forEach(c => { c.userData.held = null; });
+            draggableObjects.forEach(o => disposeObject(o));
+            draggableObjects = []; objects.clear(); selected = null; marker.visible = false;
+        }
+
+        async function applyState(state) {
+            const epoch = ++stateEpoch;
+            clearAssets();
+            const env = state.env || 'Urban2.glb';
+            $('scene-selector').value = env;
+            if (!(envModel && currentEnv === env)) {
+                currentEnv = env;
+                if (envModel) { disposeObject(envModel); envModel = null; }
+                uiLoadStatus.innerText = 'Loading Environment...';
+                let gltf;
+                try { gltf = await loader.loadAsync(`./Models/${env}`); }
+                catch (e) { console.error('Environment failed', e); return; }
+                if (epoch !== stateEpoch) { disposeObject(gltf.scene); return; }
+                envModel = gltf.scene;
+                envModel.traverse(n => { if (n.isMesh) { n.receiveShadow = true; n.material.depthWrite = true; } });
+                envBox = new THREE.Box3().setFromObject(envModel);     // parentless => local box
+                world.add(envModel);
+                computeTable();
+                applyLayout();
+                envModel.updateMatrixWorld(true);
+                placeDesktopCamera();
+            }
+            ui.dirty = true;
+            await Promise.all((state.assets || []).map(r => spawnAsset(r, false)));
+        }
+
+        // Called by UI (desktop select, VR panel)
+        window.changeEnvironment = function (filename) {
+            applyState({ env: filename, assets: [] });
+            send({ t: 'state', state: { env: filename, assets: [] } });
+        };
+
+        window.addAsset = function (filename) {
+            const c = isXR ? envCenter : orbit.target;
+            const r = envBox.getSize(_v3).x * 0.03;
+            const jx = isXR ? (Math.random() - 0.5) * r * 2 : 0, jz = isXR ? (Math.random() - 0.5) * r * 2 : 0;
+            spawnNew(filename, c.x + jx, c.z + jz);
+        };
+
+        function clearAllAssets() { clearAssets(); send({ t: 'clear' }); }
+
+        function deleteSelected() {
+            if (!selected || selected.userData.held || selected.userData.remoteHolder) return;
+            removeObject(selected.userData.id, true);
+        }
+
+        function scaleFire(dir, obj = selected) {
+            if (!obj || obj.userData.filename !== 'Fire.glb' || obj.userData.remoteHolder) return;
+            const next = clamp(obj.scale.x + dir * 0.5, 0.5, 50);
+            obj.scale.setScalar(next); obj.userData.target.scale.setScalar(next);
+            if (!obj.userData.held) send({ t: 'xf', rec: recOf(obj, false), final: true });
+        }
+
+        /* ---- easing of idle / remote objects toward their target ---- */
+        function easeObjects(dt) {
+            const a = 1 - Math.exp(-dt * 14);
+            for (const o of draggableObjects) {
+                if (o.userData.held) continue;
+                const t = o.userData.target;
+                o.position.lerp(t.pos, a); o.quaternion.slerp(t.quat, a); o.scale.lerp(t.scale, a);
+            }
+        }
+
+        /* =====================================================================
+           NETWORK  –  peer-to-peer (WebRTC via PeerJS), no game server, max 6 players
+           * Each player claims the lowest free "seat" (0-5) as a PeerJS id on the free
+             public broker, then connects directly to everybody else.
+           * Everyone holds a full copy of the scene; a newcomer asks the first peer it
+             reaches for a snapshot.
+        ===================================================================== */
+        const MAX_PLAYERS = 6;
+        // Optional: add TURN servers here for strict corporate / mobile networks, e.g.
+        // { urls: 'turn:your.turn.server:3478', username: 'user', credential: 'pass' }
+        const TURN_SERVERS = [];
+        const ICE = { iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:global.stun.twilio.com:3478' }, ...TURN_SERVERS ] };
+
+        const ROOM_KEY = (() => {                       // namespaces rooms by your page address
+            let h = 5381; const str = location.origin + location.pathname;
+            for (let i = 0; i < str.length; i++) h = ((h * 33) ^ str.charCodeAt(i)) >>> 0;
+            return h.toString(36);
+        })();
+        const idPrefix = `icxr-${ROOM_KEY}-${roomName}-`;
+        const peerIdOf = slot => idPrefix + slot;
+        const slotOf = id => (id && id.startsWith(idPrefix) && /^\d+$/.test(id.slice(idPrefix.length))) ? +id.slice(idPrefix.length) : -1;
+
+        const conns = new Map();                         // player id -> DataConnection
+        const openCount = () => [...conns.values()].filter(c => c.open).length;
+
+        function send(msg) { conns.forEach(c => { if (c.open) { try { c.send(msg); } catch (e) {} } }); }
+        function sendTo(pid, msg) { const c = conns.get(pid); if (c && c.open) { try { c.send(msg); } catch (e) {} } }
+
+        function setNet(st) {
+            netState = st;
+            const dot = st === 'online' ? '🟢' : st === 'connecting' ? '🟡' : '🔴';
+            const label = st === 'online' ? `Room “${roomName}” · ${players.size + 1} of ${MAX_PLAYERS}` :
+                          st === 'connecting' ? 'Connecting…' :
+                          st === 'full' ? `Room full (${MAX_PLAYERS}/${MAX_PLAYERS}) – working solo` : 'Offline – working solo';
+            $('net-status').innerHTML = `${dot} ${label}<br><span style="opacity:.6">You are player ${myId || '–'}</span>`;
+            ui.dirty = true;
+        }
+
+        function connect() {
+            if (typeof Peer === 'undefined') { setNet('offline'); return; }
+            setNet('connecting'); claim(0);
+        }
+
+        function claim(slot) {
+            if (slot >= MAX_PLAYERS) { setNet('full'); return; }
+            let opened = false;
+            const p = new Peer(peerIdOf(slot), { config: ICE });
+            p.on('open', () => { opened = true; peer = p; mySeat = slot; myId = slot + 1; onClaimed(); });
+            p.on('connection', registerConn);
+            p.on('disconnected', () => { try { p.reconnect(); } catch (e) {} });
+            p.on('error', err => {
+                if (!opened) {
+                    p.destroy();
+                    if (err.type === 'unavailable-id') return claim(slot + 1);   // seat taken -> next seat
+                    setNet('offline'); setTimeout(connect, 4000); return;
+                }
+                if (err.type !== 'peer-unavailable') console.warn('peer error:', err.type);
+            });
+        }
+
+        function onClaimed() {
+            clearPlayers(); needSync = true; helloSent = false;
+            anchorYaw = SEAT_YAWS[mySeat % 8];
+            if (isXR) recenter(false);
+            setNet('online'); refreshPlans();
+            connectToMissing();
+            setTimeout(connectToMissing, 4000); setTimeout(connectToMissing, 12000);   // catch simultaneous joiners
+        }
+
+        function connectToMissing() {
+            if (!peer) return;
+            for (let s = 0; s < MAX_PLAYERS; s++) {
+                if (s === mySeat) continue;
+                const ex = conns.get(s + 1);
+                if (ex && ex.open) continue;
+                if (ex) { conns.delete(s + 1); try { ex.close(); } catch (e) {} }
+                registerConn(peer.connect(peerIdOf(s), { reliable: true, serialization: 'json', metadata: { from: mySeat } }));
+            }
+        }
+
+        function registerConn(conn) {
+            const rs = slotOf(conn.peer);
+            if (rs < 0 || rs === mySeat || rs >= MAX_PLAYERS) { conn.close(); return; }
+            const pid = rs + 1;
+            const canonical = c => (c.metadata && c.metadata.from) === Math.min(mySeat, rs);   // lower seat initiates
+            const ex = conns.get(pid);
+            if (ex && ex.open && (canonical(ex) || !canonical(conn))) { conn.close(); return; }  // keep the existing one
+            conns.set(pid, conn);
+            if (ex) { try { ex.close(); } catch (e) {} }
+            conn.on('open', () => onPeerOpen(pid, conn));
+            conn.on('data', d => { try { onNet(d, pid); } catch (e) { console.error(e); } });
+            conn.on('close', () => { if (conns.get(pid) === conn) { conns.delete(pid); onPeerGone(pid); } });
+            conn.on('error', () => {});
+            if (conn.open) onPeerOpen(pid, conn);
+        }
+
+        function onPeerOpen(pid, conn) {
+            addPlayer(pid); setNet('online');
+            // the newcomer (connection initiator) asks for the current scene once
+            if (needSync && !helloSent && conn.metadata && conn.metadata.from === mySeat) {
+                helloSent = true; try { conn.send({ t: 'hello' }); } catch (e) {}
+            }
+        }
+
+        function onPeerGone(pid) {
+            removePlayer(pid);
+            draggableObjects.forEach(o => { if (o.userData.remoteHolder === pid) o.userData.remoteHolder = 0; });
+            setNet('online');
+        }
+
+        function snapshot() {
+            return { env: currentEnv, assets: draggableObjects.map(o => recOf(o, !!o.userData.held)) };
+        }
+
+        function onNet(m, from) {
+            switch (m.t) {
+                case 'hello': sendTo(from, { t: 'sync', state: snapshot() }); break;
+                case 'sync': if (needSync) { needSync = false; applyState(m.state); } break;
+                case 'state': needSync = false; applyState(m.state); break;
+                case 'spawn': spawnAsset(m.rec, false); break;
+                case 'xf': { const o = objects.get(m.rec.id); if (o && !o.userData.held) setTarget(o, m.rec, false); break; }
+                case 'grab': {
+                    const o = objects.get(m.id); if (!o) break;
+                    if (o.userData.held) {                       // both grabbed at once: lower player number wins
+                        if (from < myId) { forceRelease(o); o.userData.remoteHolder = from; }
+                    } else o.userData.remoteHolder = from;
+                    break;
+                }
+                case 'release': { const o = objects.get(m.id); if (o) o.userData.remoteHolder = 0; break; }
+                case 'del': removeObject(m.id, false); break;
+                case 'clear': clearAssets(); break;
+                case 'pose': { const p = players.get(from); if (p) setAvatarPose(p, m); break; }
+            }
+        }
+
+        // ---- shared plan slots: stored in this browser, loading one pushes it to everybody ----
+        const planKey = n => `icxr-plan-${ROOM_KEY}-${roomName}-${n}`;
+        function refreshPlans() {
+            plansAvailable = [1, 2, 3].map(n => { try { return !!localStorage.getItem(planKey(n)); } catch (e) { return false; } });
+            ui.dirty = true;
+        }
+        function savePlan(n) {
+            const data = { environment: currentEnv, assets: draggableObjects.map(o => {
+                const r = recOf(o, !!o.userData.held); return { file: r.file, pos: r.pos, rot: r.rot, scale: r.scale }; }) };
+            try { localStorage.setItem(planKey(n), JSON.stringify(data)); } catch (e) { alert('Could not save in this browser.'); }
+            refreshPlans();
+        }
+        function loadPlan(n) {
+            try {
+                const d = JSON.parse(localStorage.getItem(planKey(n))); if (!d) return;
+                const state = { env: d.environment, assets: (d.assets || []).map(a => ({ ...a, id: newId() })) };
+                applyState(state); send({ t: 'state', state });
+            } catch (e) { console.warn(e); }
+        }
+
+        window.addEventListener('pagehide', () => { try { if (peer) peer.destroy(); } catch (e) {} });
+
+        /* =====================================================================
+           AVATARS
+        ===================================================================== */
+        function makeLabel(text, color) {
+            const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+            const g = c.getContext('2d');
+            g.fillStyle = 'rgba(8,12,24,0.75)'; g.fillRect(0, 0, 256, 64);
+            g.fillStyle = color; g.fillRect(0, 0, 8, 64);
+            g.fillStyle = '#fff'; g.font = '600 30px "Segoe UI",sans-serif'; g.textBaseline = 'middle'; g.fillText(text, 24, 34);
+            const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+            const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, toneMapped: false }));
+            sp.scale.set(0.32, 0.08, 1); sp.renderOrder = 30; return sp;
+        }
+
+        function addPlayer(id) {
+            if (players.has(id)) return;
+            const col = new THREE.Color().setHSL((id * 0.173) % 1, 0.75, 0.55);
+            const mat = new THREE.MeshStandardMaterial({ color: col, roughness: 0.5, metalness: 0.1 });
+            const g = new THREE.Group();
+            const head = new THREE.Group();
+            head.add(new THREE.Mesh(new THREE.SphereGeometry(0.1, 20, 14), mat));
+            const nose = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.09, 10), mat);
+            nose.rotation.x = -Math.PI / 2; nose.position.z = -0.13; head.add(nose);
+            const label = makeLabel(`Player ${id}`, '#' + col.getHexString()); label.position.y = 0.24; head.add(label);
+            const mk = () => { const h = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.15), mat); h.visible = false; return h; };
+            const l = mk(), r = mk();
+            g.add(head, l, r); avatarRoot.add(g);
+            const p = { id, g, head, l, r, t: { h: null, l: null, r: null } };
+            players.set(id, p);
+        }
+
+        function removePlayer(id) {
+            const p = players.get(id); if (!p) return;
+            avatarRoot.remove(p.g); players.delete(id);
+        }
+        function clearPlayers() { [...players.keys()].forEach(removePlayer); }
+
+        function setAvatarPose(p, m) {
+            ['h', 'l', 'r'].forEach(k => {
+                if (!m[k]) { p.t[k] = null; return; }
+                const first = !p.t[k];
+                p.t[k] = m[k];
+                if (first) applyPose(k === 'h' ? p.head : p[k], m[k], 1);
+            });
+            p.l.visible = !!m.l; p.r.visible = !!m.r;
+        }
+        function applyPose(obj, a, f) {
+            _v1.set(a[0], a[1], a[2]); _q.set(a[3], a[4], a[5], a[6]);
+            obj.position.lerp(_v1, f); obj.quaternion.slerp(_q, f);
+        }
+        function updateAvatars(dt) {
+            const f = 1 - Math.exp(-dt * 18);
+            players.forEach(p => {
+                if (p.t.h) applyPose(p.head, p.t.h, f);
+                if (p.t.l) applyPose(p.l, p.t.l, f);
+                if (p.t.r) applyPose(p.r, p.t.r, f);
+            });
+        }
+
+        let lastPose = 0;
+        const r4 = n => Math.round(n * 10000) / 10000;
+        function poseArr(obj) {
+            obj.updateWorldMatrix(true, false);
+            if (isXR) {
+                anchor.updateWorldMatrix(true, false);
+                _m2.copy(anchor.matrixWorld).invert().multiply(obj.matrixWorld).decompose(_p, _q, _s);
+            } else {
+                obj.matrixWorld.decompose(_p, _q, _s);
+                _p.sub(P0).multiplyScalar(tableScale);
+            }
+            return [r4(_p.x), r4(_p.y), r4(_p.z), r4(_q.x), r4(_q.y), r4(_q.z), r4(_q.w)];
+        }
+        function sendPose(now) {
+            if (now - lastPose < 66 || !peer || openCount() === 0 || !envModel) return;
+            lastPose = now;
+            const msg = { t: 'pose', h: poseArr(camera), l: null, r: null };
+            if (isXR) ctrls.forEach(c => {
+                if (!c.userData.input) return;
+                const hand = c.userData.input.handedness === 'left' ? 'l' : 'r';
+                msg[hand] = poseArr(c);
+            });
+            send(msg);
+        }
+
+        /* =====================================================================
+           XR : SESSION
+        ===================================================================== */
+        window.startXR = async function (mode) {
+            if (!navigator.xr) return alert('WebXR is not available in this browser.');
+            xrMode = mode;
+            if ($('start-screen').style.display !== 'none') window.enterApp();
+            try {
+                const session = await navigator.xr.requestSession(mode === 'mr' ? 'immersive-ar' : 'immersive-vr',
+                    { optionalFeatures: ['local-floor', 'bounded-floor'] });
+                await renderer.xr.setSession(session);
+            } catch (e) { alert('Could not start XR: ' + e.message); }
+        };
+
+        renderer.xr.addEventListener('sessionstart', () => {
+            isXR = true;
+            savedCam = { pos: camera.position.clone(), target: orbit.target.clone() };
+            orbit.enabled = false; transform.detach();
+            sidebar.classList.add('sidebar-hidden');
+            camera.near = 0.02; camera.far = 200; camera.updateProjectionMatrix();
+            sky.visible = xrMode !== 'mr';
+            panel.visible = true; needRecenter = true; xrFrames = 0;
+            anchorYaw = SEAT_YAWS[mySeat % 8];
+            applyLayout(); ui.dirty = true;
+        });
+
+        renderer.xr.addEventListener('sessionend', () => {
+            isXR = false;
+            ctrls.forEach(c => { if (c.userData.held) releaseCtrl(c, false); });
+            sky.visible = true; panel.visible = false;
+            camera.near = 1; camera.far = 8000; camera.updateProjectionMatrix();
+            sidebar.classList.remove('sidebar-hidden');
+            orbit.enabled = true;
+            applyLayout();
+            if (savedCam) { camera.position.copy(savedCam.pos); orbit.target.copy(savedCam.target); orbit.update(); }
+            marker.visible = false;
+        });
+
+        function recenter(first) {
+            camera.updateMatrixWorld(true);
+            const head = _v1.setFromMatrixPosition(camera.matrixWorld).clone();
+            if (head.y < 0.3) head.y = 1.6;                        // no tracking yet
+            const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion); fwd.y = 0;
+            if (fwd.lengthSq() < 1e-4) fwd.set(0, 0, -1);
+            fwd.normalize();
+            const headYaw = Math.atan2(-fwd.x, -fwd.z);
+            if (first) tableH = clamp(head.y * 0.55, 0.6, 1.1);   // waist level
+            anchorYaw = headYaw + SEAT_YAWS[mySeat % 8];
+            anchor.position.set(head.x + fwd.x * TABLE_DIST, tableH, head.z + fwd.z * TABLE_DIST);
+            const pd = TABLE_DIST + tableSize / 2 + 0.3;           // panel stands behind the table, at eye level
+            panel.position.set(head.x + fwd.x * pd, head.y - 0.05, head.z + fwd.z * pd);
+            panel.rotation.set(0, headYaw, 0);
+            applyLayout();
+        }
+
+        function adjustTable(what, d) {
+            if (what === 'h') { tableH = clamp(tableH + d, 0.4, 1.4); }
+            else { tableSize = clamp(tableSize + d, 0.6, 3.0); if (envModel) computeTable(); }
+            applyLayout();
+            if (what === 's') recenterPanelOnly();
+            ui.dirty = true;
+        }
+        function recenterPanelOnly() {
+            const fwd = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), panel.rotation.y);
+            const pd = TABLE_DIST + tableSize / 2 + 0.3;
+            panel.position.x = anchor.position.x + fwd.x * (pd - TABLE_DIST);
+            panel.position.z = anchor.position.z + fwd.z * (pd - TABLE_DIST);
+        }
+
+        /* =====================================================================
+           XR : CONTROLLERS, GRABBING
+        ===================================================================== */
+        const ctrls = [];
+        const factory = new XRControllerModelFactory();
+        const raycaster = new THREE.Raycaster(); raycaster.far = 12;
+        const rayOrigin = new THREE.Vector3(), rayDir = new THREE.Vector3(), rayMat = new THREE.Matrix4();
+
+        for (let i = 0; i < 2; i++) {
+            const c = renderer.xr.getController(i);
+            c.userData = { index: i, held: null, input: null, hover: null, line: null, menuDown: false };
+            const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]);
+            const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 }));
+            line.scale.z = 1.5; c.userData.line = line; c.add(line);
+            c.addEventListener('connected', e => { c.userData.input = e.data; });
+            c.addEventListener('disconnected', () => { c.userData.input = null; });
+            c.addEventListener('selectstart', () => onTrigger(c));
+            c.addEventListener('selectend', () => { if (c.userData.held) releaseCtrl(c, true); });
+            c.addEventListener('squeezestart', () => tryGrab(c));
+            c.addEventListener('squeezeend', () => { if (c.userData.held) releaseCtrl(c, true); });
+            scene.add(c); ctrls.push(c);
+
+            const grip = renderer.xr.getControllerGrip(i);
+            grip.add(factory.createControllerModel(grip));
+            scene.add(grip);
+        }
+
+        function getRay(c) {
+            c.updateWorldMatrix(true, false);
+            rayOrigin.setFromMatrixPosition(c.matrixWorld);
+            rayMat.identity().extractRotation(c.matrixWorld);
+            rayDir.set(0, 0, -1).applyMatrix4(rayMat).normalize();
+            raycaster.set(rayOrigin, rayDir);
+        }
+
+        const _box = new THREE.Box3(), _bc = new THREE.Vector3(), _bs = new THREE.Vector3();
+        function centerRadius(o) {
+            _box.setFromObject(o); _box.getCenter(_bc); _box.getSize(_bs);
+            return Math.max(_bs.length() / 2, 0.025);               // tiny miniatures still get a usable grab sphere
+        }
+        function grabbable(o) { return !o.userData.held && !o.userData.remoteHolder; }
+
+        function pickAsset(c) {
+            getRay(c);
+            let nearObj = null, nearD = Infinity, rayObj = null, rayT = Infinity;
+            for (const o of draggableObjects) {
+                if (!grabbable(o)) continue;
+                const r = centerRadius(o);                          // sets _bc (world centre)
+                const d = rayOrigin.distanceTo(_bc);
+                if (d < r + 0.06 && d < nearD) { nearObj = o; nearD = d; }          // hand is touching it
+                const t = _v3.copy(_bc).sub(rayOrigin).dot(rayDir);
+                if (t < 0) continue;
+                const off = _v2.copy(rayDir).multiplyScalar(t).add(rayOrigin).distanceTo(_bc);
+                if (off < r + 0.02 && t < rayT) { rayObj = o; rayT = t; }           // pointing at it
+            }
+            return nearObj || rayObj;
+        }
+
+        function pulse(c, s = 0.4, ms = 40) {
+            try { c.userData.input.gamepad.hapticActuators[0].pulse(s, ms); } catch (e) { /* no haptics */ }
+        }
+
+        function onTrigger(c) {
+            if (panel.visible && c.userData.hover) {
+                const b = c.userData.hover;
+                if (!b.disabled || !b.disabled()) { pulse(c, 0.3, 30); b.action(c); ui.dirty = true; }
+                return;
+            }
+            tryGrab(c);
+        }
+
+        function tryGrab(c) {
+            if (c.userData.held) return;
+            const obj = pickAsset(c); if (!obj) return;
+            obj.userData.held = c; c.userData.held = obj; selected = obj;
+            c.attach(obj);                                          // keeps its world pose, now follows the hand
+            send({ t: 'grab', id: obj.userData.id });
+            pulse(c, 0.6, 50); ui.dirty = true;
+        }
+
+        function dropToGround(obj) {
+            const p = obj.position;
+            const y = getFloorY(p.x, p.z);
+            const yaw = _ey.setFromQuaternion(obj.quaternion, 'YXZ').y;   // keep heading, remove tilt
+            const t = obj.userData.target;
+            t.pos.set(p.x, y, p.z);
+            t.quat.setFromEuler(_e2.set(0, yaw, 0));
+            t.scale.copy(obj.scale);
+        }
+
+        function releaseCtrl(c, announce) {
+            const obj = c.userData.held; if (!obj) return;
+            c.userData.held = null; obj.userData.held = null;
+            world.attach(obj);
+            dropToGround(obj);
+            marker.visible = false;
+            if (announce) {
+                send({ t: 'xf', rec: recOf(obj, false), final: true });
+                send({ t: 'release', id: obj.userData.id });
+            }
+            pulse(c, 0.3, 30);
+        }
+
+        function forceRelease(obj) {
+            const c = obj.userData.held;
+            if (c && c.userData) releaseCtrl(c, false);
+            else { obj.userData.held = null; }
+            transform.detach();
+        }
+
+        /* =====================================================================
+           XR : EYE-LEVEL PANEL (canvas texture)
+        ===================================================================== */
+        const PW = 1024, PH = 780, M = 28, G = 10, BH = 46;
+        const ui = { buttons: [], labels: [], dirty: true, loading: false };
+        const pcanvas = document.createElement('canvas'); pcanvas.width = PW; pcanvas.height = PH;
+        const pctx = pcanvas.getContext('2d');
+        const ptex = new THREE.CanvasTexture(pcanvas);
+        ptex.colorSpace = THREE.SRGBColorSpace; ptex.anisotropy = 8;
+        const panel = new THREE.Mesh(
+            new THREE.PlaneGeometry(1.3, 1.3 * PH / PW),
+            new THREE.MeshBasicMaterial({ map: ptex, transparent: true, toneMapped: false })
+        );
+        panel.visible = false; scene.add(panel);
+
+        function grid(list, cols, y0) {
+            const bw = (PW - 2 * M - (cols - 1) * G) / cols;
+            list.forEach((b, i) => {
+                b.x = M + (i % cols) * (bw + G); b.y = y0 + Math.floor(i / cols) * (BH + G); b.w = bw; b.h = BH;
+                ui.buttons.push(b);
+            });
+        }
+
+        (function buildPanel() {
+            ui.labels = [['SCENE', 98], ['ASSETS  –  appears on the table, then grab it', 242], ['TABLE & EDIT', 500], ['PLANS  (kept in this browser, load shares with everyone)', 646]];
+            grid(SCENES.map(s => ({ label: s[1], kind: 'scene', active: () => currentEnv === s[0], action: () => window.changeEnvironment(s[0]) })), 3, 110);
+            grid(ASSETS.map(a => ({ label: a[2], kind: 'asset', action: () => window.addAsset(a[0]) })), 5, 256);
+            grid([
+                { label: 'DELETE SELECTED', kind: 'danger', action: deleteSelected },
+                { label: 'CLEAR ALL', kind: 'danger', action: clearAllAssets },
+                { label: 'FIRE BIGGER', kind: 'act', action: () => scaleFire(1) },
+                { label: 'FIRE SMALLER', kind: 'act', action: () => scaleFire(-1) },
+                { label: 'RECENTER', kind: 'act', action: () => recenter(false) },
+                { label: 'TABLE UP', kind: 'act', action: () => adjustTable('h', 0.05) },
+                { label: 'TABLE DOWN', kind: 'act', action: () => adjustTable('h', -0.05) },
+                { label: 'TABLE BIGGER', kind: 'act', action: () => adjustTable('s', 0.15) },
+                { label: 'TABLE SMALLER', kind: 'act', action: () => adjustTable('s', -0.15) },
+                { label: 'EXIT XR', kind: 'danger', action: () => { const s = renderer.xr.getSession(); if (s) s.end(); } }
+            ], 5, 514);
+            grid([1, 2, 3].map(n => ({ label: `SAVE ${n}`, kind: 'save', action: () => savePlan(n) }))
+                .concat([1, 2, 3].map(n => ({ label: `LOAD ${n}`, kind: 'load', disabled: () => !plansAvailable[n - 1], action: () => loadPlan(n) }))), 6, 660);
+        })();
+
+        function rr(c, x, y, w, h, r) {
+            c.beginPath(); c.moveTo(x + r, y);
+            c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+            c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+        }
+
+        function drawPanel() {
+            const c = pctx; ui.dirty = false;
+            c.clearRect(0, 0, PW, PH);
+            rr(c, 3, 3, PW - 6, PH - 6, 30); c.fillStyle = 'rgba(12,18,32,0.94)'; c.fill();
+            c.lineWidth = 3; c.strokeStyle = 'rgba(255,255,255,0.25)'; c.stroke();
+
+            c.textBaseline = 'middle'; c.textAlign = 'left'; c.fillStyle = '#fff';
+            c.font = '300 34px "Segoe UI",Roboto,sans-serif';
+            try { c.letterSpacing = '8px'; } catch (e) {}
+            c.fillText('INCIDENT COMMAND', M, 36);
+            try { c.letterSpacing = '0px'; } catch (e) {}
+
+            c.textAlign = 'right'; c.font = '600 20px "Segoe UI",Roboto,sans-serif';
+            c.fillStyle = netState === 'online' ? '#7ee787' : netState === 'connecting' ? '#f1c40f' : '#ff7b72';
+            c.fillText(netState === 'online' ? `Room “${roomName}”  ·  ${players.size + 1} of ${MAX_PLAYERS}` : netState === 'connecting' ? 'Connecting…' : netState === 'full' ? 'Room full (solo)' : 'Offline (solo)', PW - M, 34);
+
+            c.textAlign = 'left'; c.font = '500 19px "Segoe UI",Roboto,sans-serif'; c.fillStyle = '#9fb3c8';
+            const sel = selected ? (ASSETS.find(a => a[0] === selected.userData.filename) || [0, selected.userData.filename])[1] : 'nothing';
+            c.fillText(ui.loading ? 'Loading…' : `Selected: ${sel}`, M, 70);
+
+            c.font = '800 15px "Segoe UI",Roboto,sans-serif'; c.fillStyle = '#63b3ed';
+            ui.labels.forEach(([t, y]) => { try { c.letterSpacing = '2px'; } catch (e) {} c.fillText(t.toUpperCase(), M, y); });
+            try { c.letterSpacing = '0px'; } catch (e) {}
+
+            const hov = ctrls.map(k => k.userData.hover);
+            c.textAlign = 'center';
+            ui.buttons.forEach(b => {
+                const dis = b.disabled && b.disabled();
+                const act = b.active && b.active();
+                const hot = !dis && hov.includes(b);
+                let fill = 'rgba(255,255,255,0.09)', txt = '#fff', stroke = 'rgba(255,255,255,0.22)';
+                if (b.kind === 'danger') fill = 'rgba(194,24,7,0.55)';
+                if (b.kind === 'save') { fill = 'rgba(212,175,55,0.9)'; txt = '#000'; }
+                if (b.kind === 'load') fill = 'rgba(35,134,54,0.8)';
+                if (act) { fill = '#63b3ed'; txt = '#000'; }
+                if (hot) { stroke = '#63b3ed'; if (!act) fill = 'rgba(99,179,237,0.35)'; }
+                c.globalAlpha = dis ? 0.3 : 1;
+                rr(c, b.x, b.y, b.w, b.h, 10); c.fillStyle = fill; c.fill();
+                c.lineWidth = hot ? 4 : 2; c.strokeStyle = stroke; c.stroke();
+                let fs = 19; c.font = `700 ${fs}px "Segoe UI",Roboto,sans-serif`;
+                while (c.measureText(b.label).width > b.w - 14 && fs > 11) { fs--; c.font = `700 ${fs}px "Segoe UI",Roboto,sans-serif`; }
+                c.fillStyle = txt; c.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2 + 1);
+                c.globalAlpha = 1;
+            });
+
+            c.textAlign = 'left'; c.font = '500 16px "Segoe UI",Roboto,sans-serif'; c.fillStyle = '#7d8fa3';
+            c.fillText('Trigger or Grip: pick up with your hand  ·  release: it drops to the ground  ·  Thumbstick: resize Fire  ·  B / Y: hide panel', M, 748);
+            ptex.needsUpdate = true;
+        }
+
+        function panelHover(c) {
+            c.userData.hover = null;
+            if (!panel.visible) return null;
+            getRay(c);
+            const hit = raycaster.intersectObject(panel, false)[0];
+            if (!hit) return null;
+            const x = hit.uv.x * PW, y = (1 - hit.uv.y) * PH;
+            for (const b of ui.buttons) if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) { c.userData.hover = b; break; }
+            return hit;
+        }
+
+        /* =====================================================================
+           XR : PER-FRAME
+        ===================================================================== */
+        let lastFloor = 0;
+        function updateXR(dt, now) {
+            if (needRecenter && ++xrFrames > 8) { recenter(true); needRecenter = false; ui.dirty = true; }
+
+            ctrls.forEach(c => {
+                const u = c.userData; const line = u.line;
+                line.visible = !!u.input && !u.held;
+                if (!u.input) return;
+
+                const before = u.hover;
+                const hit = panelHover(c);
+                if (before !== u.hover) ui.dirty = true;
+                line.scale.z = hit ? Math.max(0.05, hit.distance) : 1.2;
+                line.material.color.set(u.hover ? 0x63b3ed : 0xffffff);
+
+                const gp = u.input.gamepad;
+                if (gp) {
+                    const pressed = !!(gp.buttons[5] && gp.buttons[5].pressed);          // B / Y
+                    if (pressed && !u.menuDown) { panel.visible = !panel.visible; ui.dirty = true; }
+                    u.menuDown = pressed;
+                    if (u.held && u.held.userData.filename === 'Fire.glb') {              // thumbstick resizes Fire
+                        const y = gp.axes[3] || 0;
+                        if (Math.abs(y) > 0.2) {
+                            const local = u.held.scale.x / world.scale.x;           // scale in table units
+                            u.held.scale.setScalar(clamp(local - y * dt * 8, 0.5, 50) * world.scale.x);
+                        }
+                    }
+                }
+            });
+
+            // drop marker under the first held asset (floor ray is throttled)
+            const held = draggableObjects.find(o => o.userData.held);
+            if (held) {
+                if (now - lastFloor > 100) {
+                    lastFloor = now;
+                    worldLocalTransform(held, _p, _q, _s);
+                    marker.position.set(_p.x, getFloorY(_p.x, _p.z) + 0.02, _p.z);
+                }
+                marker.visible = true;
+            } else marker.visible = false;
+        }
+
+        /* ---- stream the transform of everything held by a local hand/gizmo ---- */
+        function streamHeld(now) {
+            for (const o of draggableObjects) {
+                if (!o.userData.held) continue;
+                if (now - o.userData.lastSend < 66) continue;
+                o.userData.lastSend = now;
+                send({ t: 'xf', rec: recOf(o, true), final: false });
+            }
+        }
+
+        /* =====================================================================
+           DESKTOP CONTROLS (unchanged behaviour + multiplayer)
+        ===================================================================== */
+        transform.addEventListener('dragging-changed', (e) => {
+            orbit.enabled = !e.value && !isXR;
+            const obj = transform.object; if (!obj) return;
+            if (e.value) {
+                if (obj.userData.remoteHolder) { transform.detach(); return; }
+                obj.userData.held = 'desktop'; send({ t: 'grab', id: obj.userData.id });
+            } else if (obj.userData.held === 'desktop') {
+                obj.userData.held = null;
+                if (transform.mode === 'translate') obj.position.y = getFloorY(obj.position.x, obj.position.z);
+                commitTarget(obj);
+                send({ t: 'xf', rec: recOf(obj, false), final: true });
+                send({ t: 'release', id: obj.userData.id });
+            }
+        });
+
+        transform.addEventListener('change', () => {
+            if (transform.dragging && transform.mode === 'translate' && transform.object) {
+                transform.object.position.y = getFloorY(transform.object.position.x, transform.object.position.z);
+            }
+        });
+
+        window.saveScene = function () {
+            if (draggableObjects.length === 0) return;
+            const fileName = prompt('Enter Scene Name:', 'IC_Scene');
+            if (!fileName) return;
+            const state = {
+                environment: currentEnv,
+                assets: draggableObjects.map(o => { const r = recOf(o, false); return { file: r.file, pos: r.pos, rot: r.rot, scale: r.scale }; })
+            };
+            const blob = new Blob([JSON.stringify(state)], { type: 'application/json' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `${fileName}.json`;
+            link.click();
+        };
+
+        window.handleFileSelect = function (event) {
+            const file = event.target.files[0]; if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    const state = { env: data.environment, assets: (data.assets || []).map(a => ({ ...a, id: newId() })) };
+                    applyState(state).then(() => {});
+                    send({ t: 'state', state });
+                } catch (err) { alert('Could not read that plan file.'); }
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        };
+
+        window.enterApp = () => {
+            $('start-screen').style.opacity = '0';
+            $('main-app').style.opacity = '1';
+            setTimeout(() => { $('start-screen').style.display = 'none'; }, 600);
+            const v = $('bg-video'); if (v) v.pause();
+        };
+
+        window.setMode = (m) => {
+            transform.setMode(m);
+            $('btn-move').classList.toggle('active-mode', m === 'translate');
+            $('btn-rotate').classList.toggle('active-mode', m === 'rotate');
+        };
+
+        window.resetToPlan = () => {
+            if (!envModel) return;
+            if (isXR) return recenter(false);
+            camera.position.set(envCenter.x, 200, envCenter.z);
+            orbit.target.copy(envCenter);
+        };
+
+        window.addEventListener('mousedown', (e) => {
+            if (isXR || e.target.tagName !== 'CANVAS' || isLoading) return;
+            const mouse = new THREE.Vector2((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+            const rc = new THREE.Raycaster();
+            rc.setFromCamera(mouse, camera);
+            const hits = rc.intersectObjects(draggableObjects, true);
+            if (hits.length > 0) {
+                let obj = hits[0].object;
+                while (obj.parent && !draggableObjects.includes(obj)) obj = obj.parent;
+                if (obj.userData.remoteHolder) return;                 // someone else has it
+                transform.attach(obj); selected = obj; ui.dirty = true;
+            } else if (!transform.dragging) transform.detach();
+        });
+
+        window.addEventListener('keydown', (e) => {
+            const k = e.key.toLowerCase();
+            if (k === 'm') toggleMenu();
+            if (k === 'w') setMode('translate');
+            if (k === 'e') setMode('rotate');
+            if (k === 's') saveScene();
+            if (k === 'l') $('file-loader').click();
+            if (k === 'r') resetToPlan();
+
+            if (transform.object && transform.object.userData.filename === 'Fire.glb') {
+                if (e.key === '=' || e.key === '+') scaleFire(1, transform.object);
+                if (e.key === '-' || e.key === '_') scaleFire(-1, transform.object);
+            }
+
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                if (transform.object && !transform.object.userData.remoteHolder) removeObject(transform.object.userData.id, true);
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        /* =====================================================================
+           MAIN LOOP  (desktop + XR)
+        ===================================================================== */
+        const clock = new THREE.Clock();
+        renderer.setAnimationLoop(() => {
+            const dt = Math.min(clock.getDelta(), 0.1), now = performance.now();
+            if (isXR) updateXR(dt, now); else orbit.update();
+            easeObjects(dt);
+            updateAvatars(dt);
+            streamHeld(now);
+            sendPose(now);
+            if (panel.visible && ui.dirty) drawPanel();
+            renderer.render(scene, camera);
+        });
+
+        /* =====================================================================
+           BOOT
+        ===================================================================== */
+        if (navigator.xr) {
+            navigator.xr.isSessionSupported('immersive-vr').then(ok => {
+                if (ok) { $('start-vr').style.display = 'block'; $('side-vr').style.display = 'block'; }
+            }).catch(() => {});
+            navigator.xr.isSessionSupported('immersive-ar').then(ok => {
+                if (ok) { $('start-mr').style.display = 'block'; $('side-mr').style.display = 'block'; }
+            }).catch(() => {});
+        }
+
+        applyState({ env: 'Urban2.glb', assets: [] });   // solo start; the server's state replaces it on connect
+        connect();
+    </script>
+</body>
+</html>
